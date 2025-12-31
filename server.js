@@ -1,6 +1,7 @@
 import express from "express";
 import crypto from "crypto";
 import pkg from "pg";
+import fs from "fs";
 
 const { Pool } = pkg;
 
@@ -33,6 +34,52 @@ async function initDatabase() {
 
 initDatabase();
 
+
+loadLicensesFromFile();
+
+
+
+async function loadLicensesFromFile() {
+    const content = fs.readFileSync("licenses.txt", "utf8");
+    const lines = content.split("\n");
+
+    let currentLicense = null;
+    let users = [];
+
+    for (let line of lines) {
+        line = line.trim();
+
+        if (line.startsWith("License:")) {
+            // Si on change de licence, on sauvegarde la précédente
+            if (currentLicense !== null) {
+                await saveLicense(currentLicense, users);
+            }
+
+            currentLicense = line.replace("License:", "").trim();
+            users = [];
+        }
+
+        if (line.startsWith("UserID:")) {
+            const uid = line.replace("UserID:", "").trim();
+            users.push(uid);
+        }
+    }
+
+    // Sauvegarde la dernière licence
+    if (currentLicense !== null) {
+        await saveLicense(currentLicense, users);
+    }
+
+    console.log("Licenses loaded from file");
+}
+
+async function saveLicense(license, users) {
+    await pool.query(`
+        INSERT INTO licenses (license, owner_id, allowed_ids, last_used, attempts, banned_until)
+        VALUES ($1, 0, $2, NULL, 0, NULL)
+        ON CONFLICT (license) DO UPDATE SET allowed_ids = $2;
+    `, [license, JSON.stringify(users)]);
+}
 
 
 
