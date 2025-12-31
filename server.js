@@ -11,7 +11,7 @@ app.use(express.json());
 // ==========================
 // CONFIG SÉCURITÉ
 // ==========================
-const SECRET_KEY = "une_longue_cle_secrete_tres_difficile_2025"; // change-la et garde-la privée
+const SECRET_KEY = "rREd764dJYU7665dsfEF"; // change-la et garde-la privée
 const MAX_TIME_DRIFT_SEC = 300; // 5 minutes
 const MAX_UNAUTHORIZED_IDS = 3; // Tentatives UserId non autorisés avant ban
 const BAN_DURATION_MS = 48 * 60 * 60 * 1000; // 48h
