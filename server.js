@@ -16,6 +16,23 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
+// Création automatique de la table si elle n'existe pas
+async function initDatabase() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS licenses (
+            license TEXT PRIMARY KEY,
+            owner_id BIGINT,
+            allowed_ids TEXT,
+            last_used BIGINT,
+            attempts INT DEFAULT 0,
+            banned_until BIGINT
+        );
+    `);
+    console.log("Table 'licenses' OK");
+}
+
+initDatabase();
+
 // Vérification HMAC
 function verifyHMAC(license, userid, timestamp, signature) {
     const message = license + userid + timestamp;
