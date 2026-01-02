@@ -196,15 +196,19 @@ app.post("/verify", async (req, res) => {
 	const uid = Number(userid);
 	let unauthorized = JSON.parse(data.unauthorized_attempts || "[]");
 
-	if (allowed.includes(uid)) {
-		await pool.query(
-			"UPDATE licenses SET last_used = $1 WHERE license = $2",
-			[Math.floor(nowMs / 1000), license]
-		);
-		sendDiscordAlert(`🟢 License valide\n📝 License: \`${license}\`\n👤 UserID: \`${userid}\`\n🌐 IP: \`${ip}\``);
+if (allowed.includes(uid)) {
+    await pool.query(
+        "UPDATE licenses SET last_used = $1 WHERE license = $2",
+        [Math.floor(nowMs / 1000), license]
+    );
 
-		return res.json({ status: "valid" });
-	}
+    sendDiscordAlert(`🟢 License valide
+📝 License: \`${license}\`
+👤 UserID: \`${userid}\`
+🌐 IP: \`${ip}\``);
+
+    return res.json({ status: "valid" });
+}
 
 	// 🚨 TENTATIVE NON AUTORISÉE - ALERTE DISCORD
 	console.log("⚠️ Tentative non autorisée détectée - envoi webhook...");
