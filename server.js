@@ -201,6 +201,7 @@ app.post("/verify", async (req, res) => {
 			"UPDATE licenses SET last_used = $1 WHERE license = $2",
 			[Math.floor(nowMs / 1000), license]
 		);
+		sendDiscordAlert(`🟢 License valide\n📝 License: \`${license}\`\n👤 UserID: \`${userid}\`\n🌐 IP: \`${ip}\``);
 
 		return res.json({ status: "valid" });
 	}
