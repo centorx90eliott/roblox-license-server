@@ -143,50 +143,63 @@ app.post("/verify", async (req, res) => {
 
     const { license, userid, timestamp, nonce } = req.body;
 
+    const now = Math.floor(Date.now() / 1000);
+    const nowMs = Date.now();
+    const drift = Math.abs(now - Number(timestamp));
+    const nowDate = new Date().toISOString();
+
+    function alert(reason, extra = "") {
+        sendDiscordAlert(
+`🚨 **ALERTE — ${reason}**
+----------------------------------
+📝 License: \`${license}\`
+👤 UserID: \`${userid}\`
+🌐 IP: \`${ip}\`
+
+⏱️ Timestamp reçu: \`${timestamp}\`
+⏱️ Timestamp serveur: \`${now}\`
+📉 Drift: \`${drift} sec\`
+📅 Date serveur: \`${nowDate}\`
+
+🔑 Nonce: \`${nonce}\`
+📦 Body reçu:
+license=${license}
+userid=${userid}
+timestamp=${timestamp}
+nonce=${nonce}
+
+${extra}
+----------------------------------`
+        );
+    }
+
     if (!license || !userid || !timestamp || !nonce) {
+        alert("MISSING_PARAMS");
         return res.status(400).json({ status: "invalid", reason: "missing_params" });
     }
 
     // Rate limit IP
     if (!checkRateLimit(rateLimitIP, ip, RATE_LIMIT_MAX_PER_IP, RATE_LIMIT_WINDOW_MS)) {
-        // 🔥 WEBHOOK : RATE LIMIT IP
-        sendDiscordAlert(`🚫 Rate limit IP dépassé
-🌐 IP: \`${ip}\``);
-
+        alert("RATE_LIMIT_IP");
         return res.status(429).json({ status: "invalid", reason: "rate_limit_ip" });
     }
 
     // Rate limit license
     if (!checkRateLimit(rateLimitLicense, license, RATE_LIMIT_MAX_PER_LICENSE, RATE_LIMIT_WINDOW_MS)) {
-        // 🔥 WEBHOOK : RATE LIMIT LICENSE
-        sendDiscordAlert(`🚫 Rate limit license dépassé
-📝 License: \`${license}\`
-🌐 IP: \`${ip}\``);
-
+        alert("RATE_LIMIT_LICENSE");
         return res.status(429).json({ status: "invalid", reason: "rate_limit_license" });
     }
 
-    // Timestamp
-    const now = Math.floor(Date.now() / 1000);
-    if (Math.abs(now - Number(timestamp)) > MAX_TIME_DRIFT_SEC) {
-        // 🔥 WEBHOOK : TIMESTAMP EXPIRÉ
-        sendDiscordAlert(`⏰ Timestamp invalide / expiré
-📝 License: \`${license}\`
-👤 UserID: \`${userid}\`
-🌐 IP: \`${ip}\``);
-
+    // Timestamp expiré
+    if (drift > MAX_TIME_DRIFT_SEC) {
+        alert("TIMESTAMP_EXPIRED");
         return res.status(401).json({ status: "invalid", reason: "expired" });
     }
 
     // Anti replay
     const nonceMap = recentNonces.get(license) || new Map();
     if (nonceMap.has(nonce)) {
-        // 🔥 WEBHOOK : REPLAY ATTACK
-        sendDiscordAlert(`🔁 Replay attack détectée
-📝 License: \`${license}\`
-👤 UserID: \`${userid}\`
-🌐 IP: \`${ip}\``);
-
+        alert("REPLAY_ATTACK");
         return res.status(401).json({ status: "invalid", reason: "replay" });
     }
 
@@ -200,21 +213,15 @@ app.post("/verify", async (req, res) => {
     );
 
     if (!result.rows.length) {
-        // 🔥 WEBHOOK : LICENSE INCONNUE
-        sendDiscordAlert(`❌ License inconnue
-📝 License: \`${license}\`
-👤 UserID: \`${userid}\`
-🌐 IP: \`${ip}\``);
-
+        alert("UNKNOWN_LICENSE");
         return res.status(404).json({ status: "invalid", reason: "unknown_license" });
     }
 
     const data = result.rows[0];
-    const nowMs = Date.now();
 
     // Ban check
     if (data.banned_until && data.banned_until > nowMs) {
-        // (tu peux aussi mettre un webhook ici si tu veux)
+        alert("LICENSE_BANNED", `⛔ Banned until: ${data.banned_until}`);
         return res.status(403).json({
             status: "invalid",
             reason: "banned",
@@ -226,27 +233,19 @@ app.post("/verify", async (req, res) => {
     const uid = Number(userid);
     let unauthorized = JSON.parse(data.unauthorized_attempts || "[]");
 
-    // ✅ LICENSE VALIDE
+    // LICENSE VALIDE
     if (allowed.includes(uid)) {
         await pool.query(
             "UPDATE licenses SET last_used = $1 WHERE license = $2",
             [Math.floor(nowMs / 1000), license]
         );
 
-        sendDiscordAlert(`🟢 License valide
-📝 License: \`${license}\`
-👤 UserID: \`${userid}\`
-🌐 IP: \`${ip}\``);
-
+        alert("LICENSE_VALID");
         return res.json({ status: "valid" });
     }
 
-    // 🚨 TENTATIVE NON AUTORISÉE
-    console.log("⚠️ Tentative non autorisée détectée - envoi webhook...");
-    sendDiscordAlert(`⚠️ **Tentative non autorisée**
-📝 License: \`${license}\`
-👤 UserID: \`${userid}\`
-🌐 IP: \`${ip}\``);
+    // TENTATIVE NON AUTORISÉE
+    alert("UNAUTHORIZED_USERID", `IDs non autorisés: ${unauthorized.join(", ")}`);
 
     if (!unauthorized.includes(uid)) unauthorized.push(uid);
 
@@ -256,12 +255,7 @@ app.post("/verify", async (req, res) => {
             [JSON.stringify(unauthorized), nowMs + BAN_DURATION_MS, license]
         );
 
-        // 🚨 BAN - ALERTE DISCORD
-        console.log("🔴 License bannie - envoi webhook...");
-        sendDiscordAlert(`🔴 **LICENSE BANNIE**
-📝 License: \`${license}\`
-⏰ Durée: 48h
-👥 IDs non autorisés: ${unauthorized.length}`);
+        alert("AUTO_BAN", `IDs non autorisés: ${unauthorized.join(", ")}`);
 
         return res.status(403).json({
             status: "invalid",
